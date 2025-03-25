@@ -1,0 +1,18 @@
+https://deadpan-hortensia-95f.notion.site/Settings-14a1aa15de5180a58113e7fdc2c52546
+
+sudo apt install ros-humble-turtlebot4-desktop ros-humble-turtlebot4-navigation
+ros2 run teleop_twist_keyboard teleop_twist_keyboard
+
+Visualize Node
+ros2 launch turtlebot4_viz view_robot.launch.py
+SLAM 노드를 launch해보세요.parameter file은 바로 안주셔도됩니다.
+ros2 launch turtlebot4_navigation slam.launch.py params:={parameter file}
+
+teleop과 slam노드를 이용해서, 매핑을 해보기 바랍니다. 가지고 노세요.
+그 다음, nav2 노드를 켜보세요. 이 노드는 planner관리/cmd_vel명령을 내보내는 역할을 합니다.
+ros2 launch turtlebot4_navigation nav2.launch.py params_file:='{parameter file}'
+
+카메라 끄는 법:
+ros2 service call /oakd/stop_camera std_srvs/srv/Trigger "{}"
+
+yaml파일 링크:https://github.com/turtlebot/turtlebot4/tree/humble/turtlebot4_navigation/config

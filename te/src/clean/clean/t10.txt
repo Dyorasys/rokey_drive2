@@ -1,0 +1,138 @@
+# 2025-02-12
+# 갑자기 안움직임
+# 벽에 붙는거 해결하려 했으나 안됨
+# 일부 베낀 코드
+
+import rclpy
+from rclpy.node import Node
+from nav_msgs.msg import OccupancyGrid
+from geometry_msgs.msg import PoseStamped
+from rclpy.qos import QoSProfile
+from rclpy.qos import QoSDurabilityPolicy
+from rclpy.qos import QoSHistoryPolicy
+from geometry_msgs.msg import PoseWithCovarianceStamped
+
+
+import numpy as np
+
+class mapping(Node):
+    def __init__(self):
+        super().__init__('mapping_node')
+        #QOS_ = QoSProfile(depth=10,history=QoSHistoryPolicy.KEEP_LAST,durability=QoSDurabilityPolicy.VOLATILE)
+        # map data 가져오기
+        self.sub_costmap = self.create_subscription(OccupancyGrid, '/map', self.map_callback, 10)
+        self.sub_costmap
+        
+        self.pub_goal = self.create_publisher(PoseStamped, '/goal_pose', 10)
+
+        self.sub_pose = self.create_subscription(PoseWithCovarianceStamped, '/pose', self.pose_callback, 10)
+        self.sub_pose
+
+        self.initial_goal = None
+        self.last_goal = None
+
+    def map_callback(self, data):
+
+        resolution = data.info.resolution
+        #origin_x = self.x
+        #origin_y = self.y
+        fx = data.info.origin.position.x
+        fy = data.info.origin.position.y
+        if self.initial_goal is None:
+            self.initial_goal = (fx,fy)
+
+        po = PoseStamped()
+        
+        pp = []
+        mask = np.ones([5,5])
+        
+        near = [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]]
+        w = data.info.width
+        h = data.info.height
+        a = np.reshape(data.data,(h, w))
+        searched = np.where(a == -1)
+
+        #start_position = np.array([searched[0][len(searched[0])//2],searched[1][len(searched[0])//2]])
+        #mid = len(searched[0])//2
+        # 0인 지점을 확인
+        for k in range(len(searched[0])):
+            nx, ny = searched[1][k], searched[0][k]
+            # 패딩 적용시 밖으로 안나가는 지점
+            if 2 < nx < w-3 and 2 < ny < h-3:
+                # 8방향 확인
+                for i in near:
+                    # 근처에 -1인 지점이 있으면
+                    if a[nx+i[0]][ny+i[1]] == 0:
+                        # 5*5 근처에 벽이 없으면
+                        if 100 not in (a[nx-2:nx+3,ny-2:ny+3] * mask):
+                            # 위치
+                            pp.append([fx + (nx+0.5) * resolution, fy + (ny+0.5) * resolution])
+                            break
+                        else:
+                            break
+        
+        # 현재 위치에서 가장 가까운 점
+
+
+        if len(pp) >= 5:
+            #x = origin_x + (pp[minp][0]+0.5) * resolution
+            #y = origin_y+ (pp[minp][1]+0.5) * resolution
+
+            if self.last_goal is not None:
+                ref_x, ref_y = self.last_goal  # 마지막 목표 좌표를 기준으로 탐색
+            else:
+                ref_x, ref_y = self.initial_goal  # 초기 위치를 기준으로 선택
+            
+            # 가장 가까운 위치
+            best_goal = min(pp, key=lambda p: (p[0], np.hypot(p[0] - ref_x, p[1] - ref_y)))
+            po.pose.position.x = best_goal[0]
+            po.pose.position.y = best_goal[1]
+            po.pose.position.z = 0.0
+            po.pose.orientation.w = 1.0
+            po.header.frame_id = 'map'
+            po.header.stamp = self.get_clock().now().to_msg()
+            print('------------')
+            print(f'resol = {resolution}')
+            print(f'map : x = {fx}, y = {fy}')
+            #print(f'real : x = {best_goal[0]}, y = {best_goal[1]}')
+            print(f'goal : x = {best_goal[0]}, y = {best_goal[1]}')
+
+            self.last_goal = (best_goal[0],best_goal[1])
+
+            self.pub_goal.publish(po)
+            
+        else:
+            print('done')
+            po.pose.position.x = fx
+            po.pose.position.y = fy
+            po.pose.position.z = 0.0
+            po.pose.orientation.w = 1.0
+            po.header.frame_id = 'map'
+            po.header.stamp = self.get_clock().now().to_msg()
+            
+            self.pub_goal.publish(po)
+
+        '''
+        print('------------')
+        print(f'resol = {resolution}')
+        print(f'map : x = {fx}, y = {fy}')
+        print(f'real : x = {origin_x}, y = {origin_y}')
+        print(f'goal : x = {fx + pp[minp][0] * resolution}, y = {fy+ pp[minp][1] * resolution}')
+        '''
+        
+        
+
+
+def main(args=None):
+    rclpy.init(args=args)
+    image_subscriber = mapping()
+
+    try:
+        rclpy.spin(image_subscriber)
+    except:
+        pass
+    finally:
+        rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()

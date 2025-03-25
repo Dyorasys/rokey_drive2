@@ -1,0 +1,119 @@
+# 225-02-12
+# 벽에 붙는거를 해결해 보려 함
+
+
+import rclpy
+from rclpy.node import Node
+from nav_msgs.msg import OccupancyGrid
+from geometry_msgs.msg import PoseStamped
+from rclpy.qos import QoSProfile
+from rclpy.qos import QoSDurabilityPolicy
+from rclpy.qos import QoSHistoryPolicy
+
+import numpy as np
+
+class mapping(Node):
+    def __init__(self):
+        super().__init__('mapping_node')
+        QOS_ = QoSProfile(depth=10,history=QoSHistoryPolicy.KEEP_LAST,durability=QoSDurabilityPolicy.VOLATILE)
+        # map data 가져오기
+        self.sub_costmap = self.create_subscription(OccupancyGrid, '/map', self.map_callback, QOS_)
+        self.sub_costmap
+        
+        self.pub_goal = self.create_publisher(PoseStamped, '/goal_pose', QOS_)
+
+    def map_callback(self, data):
+        resolution = data.info.resolution
+
+        po = PoseStamped()
+        
+        pp = []
+        dist = []
+        mask = np.ones([5,5])
+        
+        near = [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]]
+        w = data.info.width
+        h = data.info.height
+        a = np.reshape(data.data,(h, w))
+        searched = np.where(a == 0)
+        
+        #start_position = np.array([searched[0][len(searched[0])//2],searched[1][len(searched[0])//2]])
+        #mid = len(searched[0])//2
+        for k in range(len(searched[0])):
+            
+            if 1 < searched[0][k] < w-1 and 1 < searched[1][k] < h-1:
+                for i in near:
+                    
+                    if a[searched[0][k]+i[0]][searched[1][k]+i[1]] == -1:
+                        if a[searched[0][k]-2:searched[0][k]+3,searched[1][k]-2:searched[1][k]+3] * mask < 100:
+                            nx = searched[0][k]
+                            ny = searched[1][k]
+                            
+                            pp.append([nx, ny])
+                            
+                            dist.append((nx*resolution)**2+(ny*resolution)**2)
+                            break
+                        else:
+                            break
+        
+        minp = dist.index(min(dist))
+
+        origin_x = data.info.origin.position.x
+        origin_y = data.info.origin.position.y
+        if len(pp) >= 5:
+            #x = origin_x + (pp[0][0] - start_position[0]) * resolution
+            #y = origin_y + (pp[0][1]- start_position[1]) * resolution
+            x = origin_x + pp[minp][0] * resolution
+            y = origin_y + pp[minp][1] * resolution
+            po.pose.position.x = x
+            po.pose.position.y = y
+            po.pose.position.z = 0.0
+            po.pose.orientation.w = 1.0
+            po.header.frame_id = 'map'
+            po.header.stamp = self.get_clock().now().to_msg()
+            print('------------')
+            print(f'count : {len(pp)}')
+            print(f'index : {pp[minp]}')
+            print(f'map : {w}, {h}')
+            print(f'origin : x = {origin_x}, y = {origin_y}')
+            print(f'x = {x}, y = {y}')
+
+            self.pub_goal.publish(po)
+            
+        else:
+            print('done')
+            po.pose.position.x = origin_x
+            po.pose.position.y = origin_y
+            po.pose.position.z = 0.0
+            po.pose.orientation.w = 1.0
+            po.header.frame_id = 'map'
+            po.header.stamp = self.get_clock().now().to_msg()
+            
+            self.pub_goal.publish(po)
+        '''
+        print('-----')
+        print(origin_x)
+        print(origin_y)
+        print(origin_x + pp[0][0] * resolution)
+        print(origin_y + pp[0][1] * resolution)
+        print(pp[0])
+        print(data.info.resolution)
+        print(w)
+        print(h)
+        '''
+        
+
+
+def main(args=None):
+    rclpy.init(args=args)
+    image_subscriber = mapping()
+
+    try:
+        rclpy.spin(image_subscriber)
+    except:
+        pass
+    finally:
+        rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
